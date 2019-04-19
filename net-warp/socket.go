@@ -67,6 +67,7 @@ const (
 //	_ net.Conn = Socket(nil)
 //	_ RawConn  = (*socket)(nil)
 //)
+
 var ErrProactivelyCloseSocket = errors.New("socket is closed proactively")
 
 var socketPool = sync.Pool{
@@ -177,6 +178,7 @@ func (s *socket) Close() error {
 
 }
 
+//主动关闭
 func (s *socket) isActiveClosed() bool {
 	return atomic.LoadInt32(&s.curState) == activeClose
 }

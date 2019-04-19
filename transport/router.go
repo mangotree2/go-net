@@ -390,7 +390,7 @@ func makeCallHanlersFromFunc(pathPrefix string, callHandlerFun interface{}) ([]*
 
 	var handleFunc func(*handlerCtx,reflect.Value)
 
-	switch ctype.Kind() {
+	switch ctxType.Kind() {
 	default:
 		return nil,errors.New("call-handler : first arg must be callctx")
 	case reflect.Interface :
@@ -400,8 +400,8 @@ func makeCallHanlersFromFunc(pathPrefix string, callHandlerFun interface{}) ([]*
 				return nil,errors.New("call-handler : first arg must be CallCtx type or struct pointer "+ ctxType.String())
 		}
 
-		handleFunc = func(ctx *handlerCtx, value reflect.Value) {
-			rets := cValue.Call([]reflect.Value{reflect.ValueOf(ctx)})
+		handleFunc = func(ctx *handlerCtx, argValue reflect.Value) {
+			rets := cValue.Call([]reflect.Value{reflect.ValueOf(ctx), argValue})
 			err , _ := rets[1].Interface().(error)
 			if err != nil {
 				ctx.handlerErr = err
@@ -451,7 +451,7 @@ func makeCallHanlersFromFunc(pathPrefix string, callHandlerFun interface{}) ([]*
 			} else {
 				ctx.output.SetBody(rets[0].Interface())
 			}
-			pool.Get()
+			pool.Put(obj)
 		}
 
 	}

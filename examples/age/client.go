@@ -23,12 +23,16 @@ func main() {
 	sess.Call("/test/ok", "test1", &result)
 	log.Printf("test sync1: %v", result)
 	result = ""
+
+	log.Println()
 	rerr := sess.Call("/test/timeout", "test2", &result).Error()
 	log.Printf("test sync2: server context timeout: %v", rerr)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
 
 	result = ""
+	log.Println()
+
 	callCmd := sess.AsyncCall(
 		"/test/timeout",
 		"test3",
@@ -46,6 +50,10 @@ func main() {
 
 	time.Sleep(time.Second * 6)
 	result = ""
+
+	log.Println()
+
+
 	rerr = sess.Call("/test/ok", "test4", &result).Error()
 	log.Printf("test sync3: disconnect due to server session timeout: %v", rerr)
 

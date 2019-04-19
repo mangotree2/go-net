@@ -64,7 +64,7 @@ type session struct {
 	sessionAgeLock sync.RWMutex
 	contextAgeLock sync.RWMutex
 	conn net.Conn
-	lock 	sync.RWMutex
+	lock 	sync.RWMutex//lock conn
 
 	//client
 	redialForClientLocked func(old net.Conn) bool
@@ -185,11 +185,12 @@ func (s *session) startReadAndHandle() {
 		//todo preRead
 
 		err = s.socket.ReadMessage(ctx.input)
+		//无法解到业务包，或连接关闭
 		if (err != nil && ctx.GetBodyCodec() == codec.NilCodecId) || !s.goonRead() {
 			s.transport.putContext(ctx,false)
 			return
 		}
-
+		//解包失败，统一handle处理，回复错误
 		if err != nil {
 			ctx.handlerErr = errBadMessage
 		}
@@ -226,12 +227,14 @@ func (s *session) write(message *Message) (net.Conn,error){
 	)
 
 	select {
+	//超时
 	case <- ctx.Done():
 		err = ctx.Err()
 		goto ERR
 	default:
 	}
 
+	//可以不加锁
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 
@@ -248,6 +251,7 @@ func (s *session) write(message *Message) (net.Conn,error){
 		return conn,nil
 	}
 
+	//对端关闭
 	if err == io.EOF || err == socket.ErrProactivelyCloseSocket {
 		return conn, errConnClosed
 	}
@@ -258,12 +262,15 @@ ERR:
 
 }
 
+
 func (s *session)notifyClose() {
 	if atomic.CompareAndSwapInt32(&s.didCloseNotify,0,1) {
 		close(s.closeNotifyCh)
 	}
 }
 
+// 暂时在解包失败 或者 重连后 关闭旧连接
+//
 func (s *session) Close() error {
 	s.lock.Lock()
 
@@ -280,9 +287,12 @@ func (s *session) Close() error {
 	s.statusLock.Unlock()
 
 	s.transport.sessHub.Delete(s.Id())
+	//给监听此连接关闭的chan 发送一次
 	s.notifyClose()
 
+	//等此连接所有ctx handle 完
 	s.graceCtxWaitGroup.Wait()
+	//主动关闭还是可以接受对端东西，等对方所有回复
 	s.graceCallCmdWaitGroup.Wait()
 
 	s.statusLock.Lock()
@@ -305,11 +315,13 @@ func (s *session) Close() error {
 func (s *session)readDisconnected(oldConn net.Conn,err error) {
 	s.statusLock.Lock()
 	status := s.getStatus()
+	//主动关闭
 	if status == statusActiveClosed {
 		s.statusLock.Unlock()
 		return
 	}
 
+	//被动关闭
 	s.passivelyClosd()
 	s.statusLock.Unlock()
 
@@ -321,6 +333,7 @@ func (s *session)readDisconnected(oldConn net.Conn,err error) {
 	}
 	s.graceCtxWaitGroup.Wait()
 
+	//清数据
 	s.callCmdMap.Range(func(_, value interface{}) bool {
 		callCmd := value.(*callCmd)
 		callCmd.mu.Lock()
@@ -337,14 +350,14 @@ func (s *session)readDisconnected(oldConn net.Conn,err error) {
 
 	s.socket.Close()
 
-	if !s.redialForClientLocked(oldConn) {
+	//若是客户端 需要重连
+	if !s.redialForClient(oldConn) {
 		//
 	}
 
 }
 
-//算是client
-
+// client 专用
 func (s *session) redialForClient(oldConn net.Conn) bool {
 	if s.redialForClientLocked == nil {
 		return false
@@ -436,7 +449,8 @@ func (s *session) AsyncCall(uri string, arg interface{}, result interface{}, cal
 	var usedConn net.Conn
 W:
 	if usedConn,cmd.err = s.write(output);cmd.err != nil {
-		if cmd.err == errConnClosed && s.redialForClient(usedConn) {
+		if cmd.err == errConnClosed && s.redialForClient(usedConn) {// 写失败，重连成功后在试一次
+
 			goto W
 		}
 		cmd.done()

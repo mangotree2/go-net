@@ -78,7 +78,6 @@ func (r *rawProto) Pack(m *Message) error {
 	}
 
 	//header 和body 加密
-	log.Println("Pack len “",buf.Len())
 	err = m.SetSize(uint32(buf.Len()))
 	if err != nil {
 		return err
@@ -87,6 +86,9 @@ func (r *rawProto) Pack(m *Message) error {
 	binary.BigEndian.PutUint32(buf.Bytes(),m.Size())
 
 	_, err = r.w.Write(buf.Bytes())
+	//log.Printf("Pack (len:%d), (bytes :%v) \n",buf.Len(), buf.Bytes())
+	//log.Printf("Pack (len:%d) \n",buf.Len())
+
 	if err != nil {
 		return err
 	}
@@ -97,13 +99,15 @@ func (r *rawProto) Pack(m *Message) error {
 
 func (r *rawProto) Unpack(m *Message) error {
 	buf := make([]byte,1024)
-	err := r.readMessage(buf,m)
+	err := r.readMessage(&buf,m)
 	if err != nil {
-		log.Println("Unpack readMessage err")
+		log.Printf("Unpack readMessage (err: %v)\n",err)
 		return err
 	}
 
-	log.Println(buf)
+	//log.Printf("Unpack (len:%d), (bytes :%v) \n",m.size,buf)
+	//log.Printf("Unpack (len:%d) \n",m.size)
+
 	buf = r.readHeader(buf,m)
 
 	return r.readBody(buf,m)
@@ -113,30 +117,31 @@ func (r *rawProto) Unpack(m *Message) error {
 
 var errProtoUnmatch = errors.New("mismatched protocol")
 
-func (r *rawProto) readMessage(buf []byte,m *Message) error {
+func (r *rawProto) readMessage(buf *[]byte,m *Message) error {
 	r.rMu.Lock()
 	defer r.rMu.Unlock()
 
-	if len(buf) < 1 {
-		buf = make([]byte,1024)
+	if len(*buf) < 1 {
+		*buf = make([]byte,1024)
 	}
 
 	var size uint32
 	err := binary.Read(r.r,binary.BigEndian,&size)
-	if err != nil {
+	if err != nil {//读不到size
 		return err
 	}
 
+	//若包太大
 	if err = m.SetSize(size);err != nil {
 		return err
 	}
 
-	_, err = io.ReadFull(r.r, buf[0:1])
+	_, err = io.ReadFull(r.r, (*buf)[0:1])
 	if err != nil {
 		return err
 	}
 
-	if buf[0] != r.id {
+	if (*buf)[0] != r.id {//protocol不对
 		return errProtoUnmatch
 	}
 
@@ -146,8 +151,8 @@ func (r *rawProto) readMessage(buf []byte,m *Message) error {
 
 
 	var lastLen = int(size) - 4 - 1
-	buf = make([]byte,lastLen)
-	_,err =io.ReadFull(r.r,buf)
+	*buf = make([]byte,lastLen)
+	_,err =io.ReadFull(r.r,*buf)
 	return err
 }
 

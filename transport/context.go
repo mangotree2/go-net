@@ -73,8 +73,8 @@ type (
 		input *Message
 		output *Message
 		handler *Handler
-		arg reflect.Value
-		callCmd *callCmd
+		arg reflect.Value//请求参数
+		callCmd *callCmd//call cmd
 		swap sync.Map
 		start time.Time
 		cost  time.Duration
@@ -83,7 +83,7 @@ type (
 		next *handlerCtx
 	}
 
-	)
+)
 
 func (c *handlerCtx) InputBodyBytes() []byte {
 	b, ok := c.input.Body().(*[]byte)
